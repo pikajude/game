@@ -14,6 +14,7 @@ module Control.Lens.Geometry.Vector (
   -- * Vector conversion
   polar,
   cartesian,
+  tuple,
 
   -- * Individual accessors
   magnify,
@@ -71,11 +72,16 @@ makeLenses ''Polar
 class OrderedPair p a where
     -- | GHC doesn't allow overloading of @(,)@.
     (+:) :: a -> a -> p a
+    decompose :: p a -> (a, a)
 
 infixr 1 +:
 
-instance RealFloat a => OrderedPair Cartesian a where (+:) = Cartesian
-instance RealFloat a => OrderedPair Polar a where (+:) = Polar
+instance RealFloat a => OrderedPair Cartesian a where
+    (+:) = Cartesian
+    decompose (Cartesian x' y') = (x', y')
+instance RealFloat a => OrderedPair Polar a where
+    (+:) = Polar
+    decompose (Polar r t) = (r, t)
 
 instance RealFloat a => Monoid (Cartesian a) where
     mempty = Cartesian 0 0
@@ -111,3 +117,7 @@ polar f c = fmap fromPolar (f $ toPolar c)
 cartesian :: RealFloat a => Lens' (Polar a) (Cartesian a)
 cartesian f p = fmap toPolar (f $ fromPolar p)
 {-# INLINE cartesian #-}
+
+tuple :: (Functor f, OrderedPair p b, OrderedPair p1 a)
+      => ((a, a) -> f (b, b)) -> p1 a -> f (p b)
+tuple f p = fmap (uncurry (+:)) (f $ decompose p)
