@@ -12,7 +12,7 @@ import System.Environment
 import System.Random
 
 maxSpeed :: Float
-maxSpeed = 400 -- x/60 per frame, x per second
+maxSpeed = 8 -- per frame
 
 acceleration :: Float
 acceleration = 20 -- not sure exactly
@@ -77,13 +77,12 @@ handleEvent _ w = return w
 tickGame :: Float -> World -> IO World
 tickGame f w = do
     g <- newStdGen
-    let newW' = w & playerFriction .~ ( w ^. playerSpeed
-                                      & magnitude *~ 0.3
-                                      & angle %~ invertAngle )
-        newW = newW' & playerSpeed <>~ (newW' ^. playerAccel.polar & magnitude *~ f)
-                     & playerSpeed <>~ (newW' ^. playerFriction & magnitude *~ f)
-                     & tails %~ (take 30 . ((jitter w g $ newW ^. playerPos, newW ^. playerTailColor):))
-        newNewW = newW & playerPos <>~ (newW ^. playerSpeed . cartesian)
+    let newW = w & playerSpeed <>~ (w ^. playerAccel.polar & magnitude %~ (f *) . min acceleration)
+                 & playerSpeed <>~ (w ^. playerSpeed & magnitude *~ (3 * f)
+                                                     & angle %~ invertAngle)
+                 & playerSpeed . magnitude %~ min maxSpeed
+                 & tails %~ (take 30 . ((jitter w g $ newW ^. playerPos, newW ^. playerTailColor):))
+        newNewW = newW & playerPos <>~ ((newW ^. playerSpeed & magnitude *~ speedFactor) ^. cartesian)
     return newNewW
     where
         speedFactor = if w ^. playerTurbo then 2 else 1
