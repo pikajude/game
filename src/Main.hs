@@ -38,7 +38,7 @@ renderGame w = return . pictures . reverse
           shape = join rectangleSolid
           drawAccel pos vec' = if w ^. debug
               then let vec = vec' & polar.magnitude *~ 1.5
-                    in color green
+                    in color magenta
                      . uncurry translate (pos ^. tuple)
                      . rotate (negate $ vec ^. polar.angle * 180 / pi - 90)
                      $ polygon [ (-2, 0), (-2, vec ^. polar.magnitude)
@@ -47,7 +47,7 @@ renderGame w = return . pictures . reverse
           drawSpeed :: Cartesian Float -> Cartesian Float -> Picture
           drawSpeed pos vec' = if w ^. debug
               then let vec = vec' & polar.magnitude *~ 8
-                    in color red
+                    in color cyan
                      . uncurry translate (pos ^. tuple)
                      . rotate (negate $ vec ^. polar.angle * 180 / pi - 90)
                      $ polygon [ (-2, 0), (-2, vec ^. polar.magnitude)
@@ -67,8 +67,8 @@ handleEvent (EventKey (SpecialKey kd) Up _ _) w
     | kd == KeyRight = return $ w & playerAccel . x -~ acceleration
 handleEvent (EventKey (Char 'a') st _ _) w
     | st == Down = return $ w & playerTurbo .~ True
-                              & playerColor .~ red
-                              & playerTailColor .~ red
+                              & playerColor .~ green
+                              & playerTailColor .~ green
     | otherwise = return $ w & playerTurbo .~ False
                              & playerColor .~ white
                              & playerTailColor .~ white
@@ -78,14 +78,14 @@ tickGame :: Float -> World -> IO World
 tickGame f w = do
     g <- newStdGen
     let newW = w & playerSpeed <>~ (w ^. playerAccel.polar & magnitude %~ (f *) . min acceleration)
-                 & playerSpeed <>~ (w ^. playerSpeed & magnitude *~ (3 * f)
+                 & playerSpeed <>~ (w ^. playerSpeed & magnitude *~ f
                                                      & angle %~ invertAngle)
                  & playerSpeed . magnitude %~ min maxSpeed
                  & tails %~ (take 30 . ((jitter w g $ newW ^. playerPos, newW ^. playerTailColor):))
         newNewW = newW & playerPos <>~ ((newW ^. playerSpeed & magnitude *~ speedFactor) ^. cartesian)
     return newNewW
     where
-        speedFactor = if w ^. playerTurbo then 2 else 1
+        speedFactor = (* 60) . (* f) $ if w ^. playerTurbo then 2 else 1
         invertAngle x' | x' >= pi = x' - pi
                        | otherwise = x' + pi
         jitter w' g p = let j = w' ^. shadowJitter
