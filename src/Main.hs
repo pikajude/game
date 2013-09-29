@@ -1,24 +1,18 @@
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Main where
 
 import Control.Lens.Geometry
 import Control.Monad
 import Data.Default
-import Game.Color
+import Data.Text (Text)
+import qualified Data.HashMap.Strict as H
 import Game.World
 import Graphics.Gloss hiding (Point)
 import Graphics.Gloss.Interface.Pure.Game
 import Graphics.Gloss.Interface.IO.Game
 import System.Environment
-import System.Random
-
-maxSpeed :: Float
-maxSpeed = 8 -- per frame
-
-acceleration :: Float
-acceleration = 20 -- not sure exactly
-
-friction :: Float
-friction = 5
 
 frameRate :: Int
 frameRate = 5
@@ -27,71 +21,47 @@ background :: Color
 background = black
 
 renderGame :: World -> IO Picture
-renderGame w = return . pictures . reverse
-             $ drawAccel (w ^. playerPos) (w ^. playerAccel)
-             : drawSpeed (w ^. playerPos) (w ^. playerSpeed . cartesian)
-             : drawCircle 1 (w ^. playerPos, w ^. playerColor)
-             : zipWith drawCircle (map (/30) [26,25..]) (w ^. tails)
-    where drawCircle f (m, c) = color (transparent f c)
-                                 . uncurry translate (m ^. tuple)
-                                 $ shape (30 * f)
-          shape = join rectangleSolid
-          drawAccel pos vec' = if w ^. debug
-              then let vec = vec' & polar.magnitude *~ 1.5
-                    in color magenta
-                     . uncurry translate (pos ^. tuple)
-                     . rotate (negate $ vec ^. polar.angle * 180 / pi - 90)
-                     $ polygon [ (-2, 0), (-2, vec ^. polar.magnitude)
-                               , (2, vec ^. polar.magnitude), (2, 0) ]
-              else blank
-          drawSpeed :: Cartesian Float -> Cartesian Float -> Picture
-          drawSpeed pos vec' = if w ^. debug
-              then let vec = vec' & polar.magnitude *~ 8
-                    in color cyan
-                     . uncurry translate (pos ^. tuple)
-                     . rotate (negate $ vec ^. polar.angle * 180 / pi - 90)
-                     $ polygon [ (-2, 0), (-2, vec ^. polar.magnitude)
-                               , (2, vec ^. polar.magnitude), (2, 0) ]
-              else blank
+renderGame w = fmap pictures $ mapM (renderPlayer ?? w) (H.toList $ w ^. entities)
 
 handleEvent :: Event -> World -> IO World
 handleEvent (EventKey (SpecialKey kd) Down _ _) w
-    | kd == KeyDown  = return $ w & playerAccel . y -~ acceleration
-    | kd == KeyUp    = return $ w & playerAccel . y +~ acceleration
-    | kd == KeyLeft  = return $ w & playerAccel . x -~ acceleration
-    | kd == KeyRight = return $ w & playerAccel . x +~ acceleration
+    | kd == KeyDown  = return $ w & player.behavior.acceleration.y -~ (w ^?! player.behavior.physics.accelerationDelta)
+    | kd == KeyUp    = return $ w & player.behavior.acceleration.y +~ (w ^?! player.behavior.physics.accelerationDelta)
+    | kd == KeyLeft  = return $ w & player.behavior.acceleration.x -~ (w ^?! player.behavior.physics.accelerationDelta)
+    | kd == KeyRight = return $ w & player.behavior.acceleration.x +~ (w ^?! player.behavior.physics.accelerationDelta)
 handleEvent (EventKey (SpecialKey kd) Up _ _) w
-    | kd == KeyDown  = return $ w & playerAccel . y +~ acceleration
-    | kd == KeyUp    = return $ w & playerAccel . y -~ acceleration
-    | kd == KeyLeft  = return $ w & playerAccel . x +~ acceleration
-    | kd == KeyRight = return $ w & playerAccel . x -~ acceleration
+    | kd == KeyDown  = return $ w & player.behavior.acceleration.y +~ (w ^?! player.behavior.physics.accelerationDelta)
+    | kd == KeyUp    = return $ w & player.behavior.acceleration.y -~ (w ^?! player.behavior.physics.accelerationDelta)
+    | kd == KeyLeft  = return $ w & player.behavior.acceleration.x +~ (w ^?! player.behavior.physics.accelerationDelta)
+    | kd == KeyRight = return $ w & player.behavior.acceleration.x -~ (w ^?! player.behavior.physics.accelerationDelta)
 handleEvent (EventKey (Char 'a') st _ _) w
-    | st == Down = return $ w & playerTurbo .~ True
-                              & playerColor .~ green
-                              & playerTailColor .~ green
-    | otherwise = return $ w & playerTurbo .~ False
-                             & playerColor .~ white
-                             & playerTailColor .~ white
+    | st == Down = return $ w & turbo .~ True
+    | otherwise = return $ w & turbo .~ False
 handleEvent _ w = return w
 
 tickGame :: Float -> World -> IO World
-tickGame f w = do
-    g <- newStdGen
-    let newW = w & playerSpeed <>~ (w ^. playerAccel.polar & magnitude %~ (f *) . min acceleration)
-                 & playerSpeed <>~ (w ^. playerSpeed & magnitude *~ f
-                                                     & angle %~ invertAngle)
-                 & playerSpeed . magnitude %~ min maxSpeed
-                 & tails %~ (take 30 . ((jitter w g $ newW ^. playerPos, newW ^. playerTailColor):))
-        newNewW = newW & playerPos <>~ ((newW ^. playerSpeed & magnitude *~ speedFactor) ^. cartesian)
-    return newNewW
+tickGame f w = go (H.toList $ w ^. entities) w
     where
-        speedFactor = (* 60) . (* f) $ if w ^. playerTurbo then 2 else 1
+        go (e:es) w' = do
+            (k',e') <- tickEntity f e w'
+            go es (w' & entities.ix k' .~ e')
+        go [] w' = return w'
+
+tickEntity :: Float -> (Text, Entity World) -> World -> IO (Text, Entity World)
+tickEntity f (k,p) _ = do
+    let p' = p & behavior.speed <>~ (p ^. behavior.acceleration.polar & magnitude %~ (f *) . min (p ^. behavior.physics.accelerationDelta))
+               & behavior.speed <>~ (p ^. behavior.speed & magnitude *~ (p ^. behavior.physics.frictionDelta * f)
+                                                         & angle %~ invertAngle)
+               & behavior.speed . magnitude %~ min (p ^. behavior.physics.maximumSpeed)
+        pPos = p' & behavior.position <>~ (p' ^. behavior.speed.cartesian)
+    b' <- applyAll (pPos ^. transforms) (pPos ^. behavior)
+    return (k, pPos & behavior .~ b')
+    where
         invertAngle x' | x' >= pi = x' - pi
                        | otherwise = x' + pi
-        jitter w' g p = let j = w' ^. shadowJitter
-                            (xJ, g') = randomR (-j, j) g
-                            (yJ, _)  = randomR (-j, j) g'
-                         in p & x +~ xJ & y +~ yJ
+
+applyAll :: Monad m => [a -> m a] -> a -> m a
+applyAll = foldr (<=<) return
 
 main :: IO ()
 main = do
