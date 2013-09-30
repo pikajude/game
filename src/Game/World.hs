@@ -21,8 +21,10 @@ module Game.World (
 
   Entity,
   behavior,
+  metadata,
   name,
-  transforms,
+  beforeTick,
+  afterTick,
   render,
 
   World,
@@ -62,10 +64,17 @@ instance Show (Behavior -> IO Behavior) where show _ = "[behavior transforms]"
 
 instance Show (a -> b -> IO Picture) where show _ = "render function"
 
+data Metadata w = Player { _tails :: [(Cartesian Float, Color)] }
+                | None
+
+makeLenses ''Metadata
+
 data Entity w = Entity
             { _name       :: Text
+            , _metadata   :: Metadata (Entity w)
             , _behavior   :: Behavior
-            , _transforms :: [Float -> Behavior -> IO Behavior]
+            , _beforeTick :: [Float -> Entity w -> IO (Entity w)]
+            , _afterTick  :: [Float -> Entity w -> IO (Entity w)]
             , _render     :: (Text, Entity w) -> w -> IO Picture
             }
 
@@ -74,7 +83,6 @@ makeLenses ''Entity
 data World = World
            { _entities         :: HashMap Text (Entity World)
            , _turbo            :: Bool
-           , _tails            :: [(Cartesian Float, Color)]
            , _shadowJitter     :: Float
            , _debug            :: Bool
            }
@@ -89,12 +97,12 @@ instance Default World where
     def = World
         { _entities        = mapFromList [("player", defaultPlayer), ("square", yellowSquare)]
         , _turbo           = False
-        , _tails           = []
         , _shadowJitter    = 4.0
         , _debug           = False
         } where
             yellowSquare = Entity
                 { _name = "square"
+                , _metadata = None
                 , _behavior = Behavior
                     { _acceleration = def
                     , _speed = 3 +: pi / 4
@@ -105,11 +113,13 @@ instance Default World where
                         , _maximumSpeed = 1 / 0
                         }
                     }
-                , _transforms = [\f b -> return $ b & speed <>~ (f +: 5 * pi / 4)]
+                , _beforeTick = []
+                , _afterTick = [\f b -> return $ b & behavior.speed <>~ (f +: 5 * pi / 4)]
                 , _render = drawSquare
                 }
             defaultPlayer = Entity
                 { _name     = "Player"
+                , _metadata = Player []
                 , _behavior = Behavior
                     { _acceleration = def
                     , _speed        = def
@@ -120,7 +130,8 @@ instance Default World where
                         , _maximumSpeed      = 8
                         }
                     }
-                , _transforms = []
+                , _beforeTick = [addTails]
+                , _afterTick = []
                 , _render = renderPlayer
                 }
 
@@ -130,13 +141,17 @@ drawSquare (_,p) _ = return $ pictures [yellowSquare, drawSpeed p, drawAccel p]
                        . color yellow
                        $ rectangleSolid 30 30
 
+addTails :: Float -> Entity World -> IO (Entity World)
+addTails _ e = return $ e & metadata.tails %~ take 30 . ((e ^. behavior.position, white):)
+
 renderPlayer :: Monad m => (Text, Entity World) -> World -> m Picture
 renderPlayer (_,p) _ = return . pictures . reverse $
         drawAccel p : drawSpeed p
-      : [drawCircle (p ^. behavior.position)]
-    where drawCircle m = color white
-                       . uncurry translate (m ^. tuple)
-                       $ shape 30
+      : drawCircle (p ^. behavior.position) white 30
+      : zipWith (uncurry drawCircle) (p ^. metadata.tails) [30,29..]
+    where drawCircle m c s = color c
+                           . uncurry translate (m ^. tuple)
+                           $ shape s
           shape = join rectangleSolid
 
 drawSpeed :: Entity w -> Picture

@@ -1,3 +1,4 @@
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -47,22 +48,24 @@ tickGame f w = go (H.toList $ w ^. entities) w
         go [] w' = return w'
 
 tickEntity :: Float -> (Text, Entity World) -> World -> IO (Text, Entity World)
-tickEntity f (k,p) _ = do
+tickEntity f (k,entity) _ = do
+    p <- applyAll f (entity ^. beforeTick) entity
     let p' = p & behavior.speed <>~ (p ^. behavior.acceleration.polar & magnitude %~ (f *) . min (p ^. behavior.physics.accelerationDelta))
                & behavior.speed <>~ (p ^. behavior.speed & magnitude *~ (p ^. behavior.physics.frictionDelta * f)
                                                          & angle %~ invertAngle)
                & behavior.speed . magnitude %~ min (p ^. behavior.physics.maximumSpeed)
         pPos = p' & behavior.position <>~
                   ((p' ^. behavior.speed & magnitude *~ speedFactor) ^. cartesian)
-    b' <- applyAll f (pPos ^. transforms) (pPos ^. behavior)
-    return (k, pPos & behavior .~ b')
+    b' <- applyAll f (entity ^. afterTick) pPos
+    return (k, b')
     where
         invertAngle x' | x' >= pi = x' - pi
                        | otherwise = x' + pi
         speedFactor = 60 * f
 
-applyAll :: Float -> [Float -> Behavior -> IO Behavior] -> Behavior -> IO Behavior
-applyAll f = foldr (\a b -> a f <=< b) return
+applyAll :: (Monad m, MonoFoldable c, Element c ~ (t -> b -> m b))
+         => t -> c -> b -> m b
+applyAll f = foldr ((<=<) . ($ f)) return
 
 main :: IO ()
 main = do
