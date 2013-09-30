@@ -3,19 +3,18 @@
 
 module Main where
 
+import ClassyPrelude hiding (Down)
 import Control.Lens.Geometry
-import Control.Monad
+import Control.Monad ((<=<))
 import Data.Default
-import Data.Text (Text)
 import qualified Data.HashMap.Strict as H
 import Game.World
 import Graphics.Gloss hiding (Point)
 import Graphics.Gloss.Interface.Pure.Game
 import Graphics.Gloss.Interface.IO.Game
-import System.Environment
 
 frameRate :: Int
-frameRate = 5
+frameRate = 100
 
 background :: Color
 background = black
@@ -53,23 +52,25 @@ tickEntity f (k,p) _ = do
                & behavior.speed <>~ (p ^. behavior.speed & magnitude *~ (p ^. behavior.physics.frictionDelta * f)
                                                          & angle %~ invertAngle)
                & behavior.speed . magnitude %~ min (p ^. behavior.physics.maximumSpeed)
-        pPos = p' & behavior.position <>~ (p' ^. behavior.speed.cartesian)
+        pPos = p' & behavior.position <>~
+                  ((p' ^. behavior.speed & magnitude *~ speedFactor) ^. cartesian)
     b' <- applyAll (pPos ^. transforms) (pPos ^. behavior)
     return (k, pPos & behavior .~ b')
     where
         invertAngle x' | x' >= pi = x' - pi
                        | otherwise = x' + pi
+        speedFactor = 60 * f
 
 applyAll :: Monad m => [a -> m a] -> a -> m a
 applyAll = foldr (<=<) return
 
 main :: IO ()
 main = do
-    (fr:ar) <- getArgs
+    ar <- getArgs
     let de = "--debug" `elem` ar || "-d" `elem` ar
     playIO (InWindow "game" (400, 400) (200, 100))
            background
-           (read fr)
+           frameRate
            def { _debug = de }
            renderGame
            handleEvent

@@ -26,21 +26,15 @@ module Control.Lens.Geometry.Vector (
   y
 ) where
 
+import ClassyPrelude
 import Control.Lens hiding (magnify)
 import Data.Default
-import Data.Monoid
 
 -- | Represents a cartesian vector @(x, y)@.
 data Cartesian a = Cartesian
          { _x :: a
          , _y :: a
          }
-
-instance Show a => Show (Cartesian a) where
-    showsPrec p (Cartesian x y) =
-        showParen (p > 10)
-      $ showString "Cartesian "
-      . showsPrec 11 (x,y)
 
 instance Default a => Default (Cartesian a) where def = Cartesian def def
 
@@ -51,12 +45,6 @@ data Polar a = Polar
          { _magnitude :: a
          , _angle :: a
          }
-
-instance Show a => Show (Polar a) where
-    showsPrec p (Polar r t) =
-        showParen (p > 10)
-      $ showString "Polar "
-      . showsPrec 11 (r,t)
 
 instance Default a => Default (Polar a) where def = Polar def def
 
@@ -83,13 +71,19 @@ instance RealFloat a => OrderedPair Polar a where
     (+:) = Polar
     decompose (Polar r t) = (r, t)
 
+instance RealFloat a => Semigroup (Cartesian a) where
+    Cartesian x1 y1 <> Cartesian x2 y2 = Cartesian (x1 + x2) (y1 + y2)
+
 instance RealFloat a => Monoid (Cartesian a) where
     mempty = Cartesian 0 0
-    mappend (Cartesian x1 y1) (Cartesian x2 y2) = Cartesian (x1 + x2) (y1 + y2)
+    mappend = (<>)
+
+instance RealFloat a => Semigroup (Polar a) where
+    p1 <> p2 = (view cartesian p1 <> view cartesian p2) ^. polar
 
 instance RealFloat a => Monoid (Polar a) where
     mempty = Polar 0 0
-    mappend p1 p2 = (view cartesian p1 <> view cartesian p2) ^. polar
+    mappend = (<>)
 
 -- conversion to/from polar
 toPolar :: RealFloat a => Cartesian a -> Polar a

@@ -9,13 +9,10 @@
 
 module Game.World where
 
-import Control.Applicative
+import ClassyPrelude
 import Control.Lens.Geometry
-import Control.Monad
-import Data.HashMap.Strict
 import Data.List.NonEmpty hiding (reverse)
 import Data.Default
-import Data.Text (Text)
 import Graphics.Gloss
 import System.Random
 
@@ -32,7 +29,7 @@ data Behavior = Behavior
               , _speed        :: Polar Float
               , _position     :: Cartesian Float
               , _physics      :: Physics
-              } deriving Show
+              }
 
 makeLenses ''Behavior
 
@@ -46,7 +43,7 @@ data Entity w = Entity
             , _behavior   :: Behavior
             , _transforms :: [Behavior -> IO Behavior]
             , _render     :: (Text, Entity w) -> w -> IO Picture
-            } deriving (Show)
+            }
 
 makeLenses ''Entity
 
@@ -56,7 +53,7 @@ data World = World
            , _tails            :: [(Cartesian Float, Color)]
            , _shadowJitter     :: Float
            , _debug            :: Bool
-           } deriving Show
+           }
 
 makeLenses ''World
 
@@ -69,7 +66,7 @@ player = entities.ix "player"
 
 instance Default World where
     def = World
-        { _entities        = singleton "player" defaultPlayer
+        { _entities        = singletonMap "player" defaultPlayer
         , _turbo           = False
         , _tails           = []
         , _shadowJitter    = 4.0
