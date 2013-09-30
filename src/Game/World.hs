@@ -7,11 +7,36 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-orphans #-}
 
-module Game.World where
+module Game.World (
+  Physics,
+  accelerationDelta,
+  frictionDelta,
+  maximumSpeed,
+
+  Behavior,
+  acceleration,
+  speed,
+  position,
+  physics,
+
+  Entity,
+  behavior,
+  name,
+  transforms,
+  render,
+
+  World,
+  tails,
+  entities,
+  shadowJitter,
+  turbo,
+  debug,
+
+  player,
+) where
 
 import ClassyPrelude
 import Control.Lens.Geometry
-import Data.List.NonEmpty hiding (reverse)
 import Data.Default
 import Graphics.Gloss
 import System.Random
@@ -39,9 +64,8 @@ instance Show (a -> b -> IO Picture) where show _ = "render function"
 
 data Entity w = Entity
             { _name       :: Text
-            , _colorE     :: Color
             , _behavior   :: Behavior
-            , _transforms :: [Behavior -> IO Behavior]
+            , _transforms :: [Float -> Behavior -> IO Behavior]
             , _render     :: (Text, Entity w) -> w -> IO Picture
             }
 
@@ -57,24 +81,35 @@ data World = World
 
 makeLenses ''World
 
-neHead :: Lens' (NonEmpty a) a
-neHead = lens Data.List.NonEmpty.head (\(_ :| ms) m -> m :| ms)
-
 player :: (Applicative f, Indexable Text p)
        => p (Entity World) (f (Entity World)) -> World -> f World
 player = entities.ix "player"
 
 instance Default World where
     def = World
-        { _entities        = singletonMap "player" defaultPlayer
+        { _entities        = mapFromList [("player", defaultPlayer), ("square", yellowSquare)]
         , _turbo           = False
         , _tails           = []
         , _shadowJitter    = 4.0
         , _debug           = False
         } where
+            yellowSquare = Entity
+                { _name = "square"
+                , _behavior = Behavior
+                    { _acceleration = def
+                    , _speed = 3 +: pi / 4
+                    , _position = def
+                    , _physics = Physics
+                        { _accelerationDelta = 0
+                        , _frictionDelta = 0
+                        , _maximumSpeed = 1 / 0
+                        }
+                    }
+                , _transforms = [\f b -> return $ b & speed <>~ (f +: 5 * pi / 4)]
+                , _render = drawSquare
+                }
             defaultPlayer = Entity
                 { _name     = "Player"
-                , _colorE   = white
                 , _behavior = Behavior
                     { _acceleration = def
                     , _speed        = def
@@ -89,31 +124,40 @@ instance Default World where
                 , _render = renderPlayer
                 }
 
+drawSquare :: Monad m => (Text, Entity World) -> World -> m Picture
+drawSquare (_,p) _ = return $ pictures [yellowSquare, drawSpeed p, drawAccel p]
+    where yellowSquare = uncurry translate (p ^. behavior.position.tuple)
+                       . color yellow
+                       $ rectangleSolid 30 30
+
 renderPlayer :: Monad m => (Text, Entity World) -> World -> m Picture
-renderPlayer (_,p) w = return . pictures . reverse $
-        drawAccel (p ^. behavior.position) (p ^. behavior.acceleration)
-      : drawSpeed (p ^. behavior.position) (p ^. behavior.speed.cartesian)
-      : [drawCircle (p ^. behavior.position, p ^. colorE)]
-    where drawCircle (m, c) = color c
-                            . uncurry translate (m ^. tuple)
-                            $ shape 30
+renderPlayer (_,p) _ = return . pictures . reverse $
+        drawAccel p : drawSpeed p
+      : [drawCircle (p ^. behavior.position)]
+    where drawCircle m = color white
+                       . uncurry translate (m ^. tuple)
+                       $ shape 30
           shape = join rectangleSolid
-          drawAccel pos vec' = if w ^. debug
-              then let vec = vec' & polar.magnitude *~ 1.5
-                    in color magenta
-                     . uncurry translate (pos ^. tuple)
-                     . rotate (negate $ vec ^. polar.angle * 180 / pi - 90)
-                     $ polygon [ (-2, 0), (-2, vec ^. polar.magnitude)
-                               , (2, vec ^. polar.magnitude), (2, 0) ]
-              else blank
-          drawSpeed pos vec' = if w ^. debug
-              then let vec = vec' & polar.magnitude *~ 8
-                    in color cyan
-                     . uncurry translate (pos ^. tuple)
-                     . rotate (negate $ vec ^. polar.angle * 180 / pi - 90)
-                     $ polygon [ (-2, 0), (-2, vec ^. polar.magnitude)
-                               , (2, vec ^. polar.magnitude), (2, 0) ]
-              else blank
+
+drawSpeed :: Entity w -> Picture
+drawSpeed p = let vec = vec' & polar.magnitude *~ 8
+               in color cyan
+                . uncurry translate (pos ^. tuple)
+                . rotate (negate $ vec ^. polar.angle * 180 / pi - 90)
+                $ polygon [ (-2, 0), (-2, vec ^. polar.magnitude)
+                          , (2, vec ^. polar.magnitude), (2, 0) ]
+    where pos = p ^. behavior.position
+          vec' = p ^. behavior.speed.cartesian
+
+drawAccel :: Entity w -> Picture
+drawAccel p = let vec = vec' & polar.magnitude *~ 1.5
+               in color magenta
+                . uncurry translate (pos ^. tuple)
+                . rotate (negate $ vec ^. polar.angle * 180 / pi - 90)
+                $ polygon [ (-2, 0), (-2, vec ^. polar.magnitude)
+                          , (2, vec ^. polar.magnitude), (2, 0) ]
+    where pos = p ^. behavior.position
+          vec' = p ^. behavior.acceleration
 
 instance Random Color where
     random g = let (redF :: Float, g') = random g

@@ -20,7 +20,7 @@ background :: Color
 background = black
 
 renderGame :: World -> IO Picture
-renderGame w = fmap pictures $ mapM (renderPlayer ?? w) (H.toList $ w ^. entities)
+renderGame w = fmap pictures $ mapM (\(t,e) -> (e ^. render) (t,e) w) (H.toList $ w ^. entities)
 
 handleEvent :: Event -> World -> IO World
 handleEvent (EventKey (SpecialKey kd) Down _ _) w
@@ -54,15 +54,15 @@ tickEntity f (k,p) _ = do
                & behavior.speed . magnitude %~ min (p ^. behavior.physics.maximumSpeed)
         pPos = p' & behavior.position <>~
                   ((p' ^. behavior.speed & magnitude *~ speedFactor) ^. cartesian)
-    b' <- applyAll (pPos ^. transforms) (pPos ^. behavior)
+    b' <- applyAll f (pPos ^. transforms) (pPos ^. behavior)
     return (k, pPos & behavior .~ b')
     where
         invertAngle x' | x' >= pi = x' - pi
                        | otherwise = x' + pi
         speedFactor = 60 * f
 
-applyAll :: Monad m => [a -> m a] -> a -> m a
-applyAll = foldr (<=<) return
+applyAll :: Float -> [Float -> Behavior -> IO Behavior] -> Behavior -> IO Behavior
+applyAll f = foldr (\a b -> a f <=< b) return
 
 main :: IO ()
 main = do
@@ -71,7 +71,7 @@ main = do
     playIO (InWindow "game" (400, 400) (200, 100))
            background
            frameRate
-           def { _debug = de }
+           (def & debug .~ de)
            renderGame
            handleEvent
            tickGame
