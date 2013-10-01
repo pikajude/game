@@ -64,8 +64,12 @@ instance Show (Behavior -> IO Behavior) where show _ = "[behavior transforms]"
 
 instance Show (a -> b -> IO Picture) where show _ = "render function"
 
-data Metadata w = Player { _tails :: [(Cartesian Float, Color)] }
-                | None
+data Metadata w = Player
+                { _tails :: [Cartesian Float]
+                , _jitterDistance :: Float
+                , _turbo            :: Bool
+                }
+              | None
 
 makeLenses ''Metadata
 
@@ -82,7 +86,6 @@ makeLenses ''Entity
 
 data World = World
            { _entities         :: HashMap Text (Entity World)
-           , _turbo            :: Bool
            , _shadowJitter     :: Float
            , _debug            :: Bool
            }
@@ -96,7 +99,6 @@ player = entities.ix "player"
 instance Default World where
     def = World
         { _entities        = mapFromList [("player", defaultPlayer), ("square", yellowSquare)]
-        , _turbo           = False
         , _shadowJitter    = 4.0
         , _debug           = False
         } where
@@ -119,7 +121,7 @@ instance Default World where
                 }
             defaultPlayer = Entity
                 { _name     = "Player"
-                , _metadata = Player []
+                , _metadata = Player [] 5 False
                 , _behavior = Behavior
                     { _acceleration = def
                     , _speed        = def
@@ -130,10 +132,20 @@ instance Default World where
                         , _maximumSpeed      = 8
                         }
                     }
-                , _beforeTick = [addTails]
-                , _afterTick = []
+                , _beforeTick = [addTails, removeFriction]
+                , _afterTick = [turboize]
                 , _render = renderPlayer
                 }
+
+removeFriction :: Float -> Entity World -> IO (Entity World)
+removeFriction _ w = return $ w & behavior.physics.frictionDelta .~
+                         (if w ^?! metadata.turbo then 0 else 1)
+
+turboize :: Float -> Entity World -> IO (Entity World)
+turboize f w = return $ if w ^?! metadata.turbo
+    then w & behavior.position <>~
+        ((w ^. behavior.speed & magnitude *~ (120 * f)) ^. cartesian)
+    else w
 
 drawSquare :: Monad m => (Text, Entity World) -> World -> m Picture
 drawSquare (_,p) _ = return $ pictures [yellowSquare, drawSpeed p, drawAccel p]
@@ -142,17 +154,25 @@ drawSquare (_,p) _ = return $ pictures [yellowSquare, drawSpeed p, drawAccel p]
                        $ rectangleSolid 30 30
 
 addTails :: Float -> Entity World -> IO (Entity World)
-addTails _ e = return $ e & metadata.tails %~ take 30 . ((e ^. behavior.position, white):)
+addTails _ e = do
+    let j = e ^?! metadata.jitterDistance
+    r <- randomRIO (-j, j)
+    d <- randomRIO (-j, j)
+    return $ e & metadata.tails %~
+        take 30 . ((e ^. behavior.position <> (r +: d)):)
 
 renderPlayer :: Monad m => (Text, Entity World) -> World -> m Picture
 renderPlayer (_,p) _ = return . pictures . reverse $
         drawAccel p : drawSpeed p
-      : drawCircle (p ^. behavior.position) white 30
-      : zipWith (uncurry drawCircle) (p ^. metadata.tails) [30,29..]
-    where drawCircle m c s = color c
-                           . uncurry translate (m ^. tuple)
-                           $ shape s
-          shape = join rectangleSolid
+      : zipWith drawCircle (p ^. metadata.tails) [30,29..]
+    where drawCircle m s = color (translucent (s / 30) (if p ^?! metadata.turbo then red else white))
+                         . uncurry translate (m ^. tuple)
+                         $ shape s
+          shape = circleSolid . (/2) -- join rectangleSolid
+
+translucent :: Float -> Color -> Color
+translucent f c = let (r', g', b', a') = rgbaOfColor c
+                   in makeColor r' g' b' (a' * f)
 
 drawSpeed :: Entity w -> Picture
 drawSpeed p = let vec = vec' & polar.magnitude *~ 8

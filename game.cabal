@@ -18,7 +18,7 @@ cabal-version:       >=1.10
 
 executable game
   main-is:             Main.hs
-  default-extensions:  NoImplicitPrelude, OverloadedStrings
+  default-extensions:  NoImplicitPrelude, OverloadedStrings, ImplicitParams
   other-extensions:    FlexibleContexts, TemplateHaskell
   build-depends:       base >=4.6 && <4.7
                      , classy-prelude

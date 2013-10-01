@@ -34,9 +34,7 @@ handleEvent (EventKey (SpecialKey kd) Up _ _) w
     | kd == KeyUp    = return $ w & player.behavior.acceleration.y -~ (w ^?! player.behavior.physics.accelerationDelta)
     | kd == KeyLeft  = return $ w & player.behavior.acceleration.x +~ (w ^?! player.behavior.physics.accelerationDelta)
     | kd == KeyRight = return $ w & player.behavior.acceleration.x -~ (w ^?! player.behavior.physics.accelerationDelta)
-handleEvent (EventKey (Char 'a') st _ _) w
-    | st == Down = return $ w & turbo .~ True
-    | otherwise = return $ w & turbo .~ False
+handleEvent (EventKey (Char 'a') st _ _) w = return $ w & player.metadata.turbo .~ (st == Down)
 handleEvent _ w = return w
 
 tickGame :: Float -> World -> IO World
