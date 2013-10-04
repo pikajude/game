@@ -40,6 +40,7 @@ module Game.World (
 import ClassyPrelude
 import Control.Lens.Geometry
 import Data.Default
+import Game.Color
 import Graphics.Gloss
 import System.Random
 
@@ -162,17 +163,15 @@ addTails _ e = do
         take 30 . ((e ^. behavior.position <> (r +: d)):)
 
 renderPlayer :: Monad m => (Text, Entity World) -> World -> m Picture
-renderPlayer (_,p) _ = return . pictures . reverse $
-        drawAccel p : drawSpeed p
-      : zipWith drawCircle (p ^. metadata.tails) [30,29..]
-    where drawCircle m s = color (translucent (s / 30) (if p ^?! metadata.turbo then red else white))
+renderPlayer (_,p) w = return . pictures . reverse .
+      (if w ^. debug
+        then (drawAccel p :) . (drawSpeed p :)
+        else id) $
+      zipWith drawCircle (p ^. metadata.tails) [30,29..]
+    where drawCircle m s = color ((if p ^?! metadata.turbo then red else white) & _alpha *~ (s / 30))
                          . uncurry translate (m ^. tuple)
                          $ shape s
           shape = circleSolid . (/2) -- join rectangleSolid
-
-translucent :: Float -> Color -> Color
-translucent f c = let (r', g', b', a') = rgbaOfColor c
-                   in makeColor r' g' b' (a' * f)
 
 drawSpeed :: Entity w -> Picture
 drawSpeed p = let vec = vec' & polar.magnitude *~ 8

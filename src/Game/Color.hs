@@ -1,6 +1,28 @@
 module Game.Color where
 
+import ClassyPrelude
+import Control.Lens
 import Graphics.Gloss
+
+_red, _green, _blue, _alpha :: Lens' Color Float
+
+_red = _rgba._1
+_green = _rgba._2
+_blue = _rgba._3
+_alpha = _rgba._4
+
+{-# INLINE _red #-}
+{-# INLINE _green #-}
+{-# INLINE _blue #-}
+{-# INLINE _alpha #-}
+
+_rgba :: Lens' Color (Float, Float, Float, Float)
+_rgba inj c = (\(r',g',b',a') -> makeColor r' g' b' a') <$> inj (rgbaOfColor c)
+{-# INLINE _rgba #-}
+
+traverseRGBA :: Traversal' Color Float
+traverseRGBA inj c = let (r', g', b', a') = rgbaOfColor c
+                      in makeColor <$> inj r' <*> inj g' <*> inj b' <*> inj a'
 
 transparent :: Float -> Color -> Color
 transparent f c = makeColor r g b (a * f) where
